@@ -1,5 +1,4 @@
 'use client';
-
 import { useRef, useEffect, useState, useCallback } from 'react';
 import Webcam from 'react-webcam';
 
@@ -14,7 +13,11 @@ const WebcamCircles: React.FC<WebcamCirclesProps> = ({
 }) => {
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const animationFrameRef = useRef<number | null>(null);
 
   const processImageData = useCallback(
@@ -66,6 +69,50 @@ const WebcamCircles: React.FC<WebcamCirclesProps> = ({
     animationFrameRef.current = requestAnimationFrame(processFrame);
   }, [captureAndProcess]);
 
+  const handleStartRecording = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const stream = canvas.captureStream(30);
+      mediaRecorderRef.current = new MediaRecorder(stream, {
+        mimeType: 'video/webm',
+      });
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          setRecordedChunks((prev) => [...prev, event.data]);
+        }
+      };
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    }
+  }, []);
+
+  const handleStopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+
+      // Create and download the video file
+      setTimeout(() => {
+        if (recordedChunks.length > 0) {
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          document.body.appendChild(a);
+          a.style.display = 'none';
+          a.href = url;
+          a.download = 'webcam-circles-recording.webm';
+          a.click();
+          URL.revokeObjectURL(url);
+          setRecordedChunks([]);
+        }
+      }, 100);
+    }
+  }, [isRecording, recordedChunks]);
+
+  const toggleCamera = useCallback(() => {
+    setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+  }, []);
+
   useEffect(() => {
     if (isVideoReady) {
       processFrame();
@@ -95,7 +142,7 @@ const WebcamCircles: React.FC<WebcamCirclesProps> = ({
           );
         }}
         videoConstraints={{
-          facingMode: 'user',
+          facingMode,
           width: { ideal: 1920 },
           height: { ideal: 1080 },
         }}
