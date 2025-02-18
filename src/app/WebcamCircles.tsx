@@ -1,4 +1,5 @@
 'use client';
+import React from 'react';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import Webcam from 'react-webcam';
 
