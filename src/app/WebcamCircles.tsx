@@ -191,7 +191,7 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
         />
 
         {/* Top status bar */}
-        <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-black/50">
+        <div className="absolute top-44 left-0 right-0 p-4 flex justify-between items-center bg-black/50">
           {isRecording && (
             <div className="flex items-center">
               <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse mr-2"></div>
@@ -202,7 +202,7 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
             <a
               href={downloadUrl}
               download="webcam-recording.webm"
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors mt-16"
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors"
             >
               Download Video
             </a>
