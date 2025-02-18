@@ -83,10 +83,10 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
       const canvas = canvasRef.current;
       if (canvas) {
         try {
-          const stream = canvas.captureStream(10); // Lower framerate
+          const stream = canvas.captureStream(30); // Restored to 30 fps
           const recorder = new MediaRecorder(stream, {
             mimeType: 'video/webm;codecs=h264',
-            videoBitsPerSecond: 500000, // 500 Kbps
+            videoBitsPerSecond: 2500000, // 2.5 Mbps for better quality
           });
 
           recorder.ondataavailable = (event) => {
@@ -95,7 +95,7 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
             }
           };
 
-          recorder.start(1000); // Collect in 1-second chunks
+          recorder.start(1000);
           mediaRecorderRef.current = recorder;
           setIsRecording(true);
           setRecordedChunks([]);
@@ -111,7 +111,6 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
         mediaRecorderRef.current.stop();
         setIsRecording(false);
 
-        // Create download URL after recording is complete
         mediaRecorderRef.current.onstop = () => {
           try {
             const blob = new Blob(recordedChunks, { type: 'video/webm' });
@@ -133,7 +132,6 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
       });
     }, []);
 
-    // Cleanup download URL when component unmounts
     useEffect(() => {
       return () => {
         if (downloadUrl) {
@@ -183,30 +181,33 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
           }}
           videoConstraints={{
             facingMode,
-            width: { ideal: 640 },
-            height: { ideal: 480 },
+            width: { ideal: 1280 }, // Increased resolution
+            height: { ideal: 720 },
           }}
         />
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full object-cover"
         />
-        {isRecording && (
-          <div className="absolute top-4 right-4 bg-red-500 px-2 py-1 rounded text-white">
-            Recording...
-          </div>
-        )}
-        {downloadUrl && (
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 px-4 py-2 rounded text-white">
+
+        {/* Top status bar */}
+        <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-black/50">
+          {isRecording && (
+            <div className="flex items-center">
+              <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse mr-2"></div>
+              <span className="text-white">Recording...</span>
+            </div>
+          )}
+          {downloadUrl && !isRecording && (
             <a
               href={downloadUrl}
               download="webcam-recording.webm"
-              className="text-blue-400 hover:text-blue-300"
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors"
             >
-              Download Recording
+              Download Video
             </a>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     );
   }
