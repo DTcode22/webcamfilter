@@ -18,15 +18,15 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
   ({ circleSize, spacing }, ref) => {
     const webcamRef = useRef<Webcam>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const [isVideoReady, setIsVideoReady] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
-    const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+    const [frames, setFrames] = useState<string[]>([]);
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>(
       'user'
     );
     const animationFrameRef = useRef<number | null>(null);
-    const [key, setKey] = useState(0); // Add key for forcing remount
+    const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const [key, setKey] = useState(0);
 
     const processImageData = useCallback(
       (imageData: ImageData, ctx: CanvasRenderingContext2D) => {
@@ -77,77 +77,73 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
       animationFrameRef.current = requestAnimationFrame(processFrame);
     }, [captureAndProcess]);
 
-    // Modified recording functions for better mobile performance
-    const handleStartRecording = useCallback(() => {
+    const captureFrame = useCallback(() => {
       const canvas = canvasRef.current;
       if (canvas) {
         try {
-          // Lower framerate and resolution for mobile
-          const stream = canvas.captureStream(15); // Reduced from 30 to 15 fps
-          const options = {
-            mimeType: 'video/webm;codecs=vp8',
-            videoBitsPerSecond: 1000000, // 1 Mbps
-          };
-
-          mediaRecorderRef.current = new MediaRecorder(stream, options);
-
-          // Use larger chunks to reduce memory pressure
-          mediaRecorderRef.current.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-              setRecordedChunks((prev) => [...prev, event.data]);
-            }
-          };
-
-          // Record in 1-second chunks
-          mediaRecorderRef.current.start(1000);
-          setIsRecording(true);
+          // Reduce the size of the frame for better performance
+          const tempCanvas = document.createElement('canvas');
+          const tempCtx = tempCanvas.getContext('2d');
+          if (tempCtx) {
+            tempCanvas.width = canvas.width / 2;
+            tempCanvas.height = canvas.height / 2;
+            tempCtx.drawImage(
+              canvas,
+              0,
+              0,
+              tempCanvas.width,
+              tempCanvas.height
+            );
+            const frame = tempCanvas.toDataURL('image/jpeg', 0.5);
+            setFrames((prev) => [...prev, frame]);
+          }
         } catch (error) {
-          console.error('Error starting recording:', error);
-          alert(
-            'Failed to start recording. Your device may not support this feature.'
-          );
+          console.error('Error capturing frame:', error);
         }
       }
     }, []);
 
-    const handleStopRecording = useCallback(() => {
-      if (mediaRecorderRef.current && isRecording) {
-        mediaRecorderRef.current.stop();
-        setIsRecording(false);
+    const handleStartRecording = useCallback(() => {
+      setFrames([]);
+      setIsRecording(true);
+      // Capture a frame every 200ms (5 fps)
+      recordingIntervalRef.current = setInterval(captureFrame, 200);
+    }, [captureFrame]);
 
-        // Clean up recording
-        setTimeout(() => {
-          if (recordedChunks.length > 0) {
-            try {
-              const blob = new Blob(recordedChunks, { type: 'video/webm' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              document.body.appendChild(a);
-              a.style.display = 'none';
-              a.href = url;
-              a.download = 'webcam-circles-recording.webm';
-              a.click();
-              URL.revokeObjectURL(url);
-              setRecordedChunks([]);
-            } catch (error) {
-              console.error('Error saving recording:', error);
-              alert('Failed to save recording. Please try again.');
-            }
-          }
-        }, 100);
+    const handleStopRecording = useCallback(() => {
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
       }
-    }, [isRecording, recordedChunks]);
+      setIsRecording(false);
+
+      // Create video from frames
+      if (frames.length > 0) {
+        try {
+          const element = document.createElement('a');
+          const text = frames.join('\n');
+          const blob = new Blob([text], { type: 'text/plain' });
+          element.href = URL.createObjectURL(blob);
+          element.download = 'webcam-frames.txt';
+          document.body.appendChild(element);
+          element.click();
+          document.body.removeChild(element);
+          URL.revokeObjectURL(element.href);
+          setFrames([]);
+        } catch (error) {
+          console.error('Error saving frames:', error);
+          alert('Failed to save recording. Please try again.');
+        }
+      }
+    }, [frames]);
 
     const toggleCamera = useCallback(() => {
       setFacingMode((prev) => {
         const newMode = prev === 'user' ? 'environment' : 'user';
-        // Force remount of Webcam component
         setKey((k) => k + 1);
         return newMode;
       });
     }, []);
 
-    // Expose methods via ref
     useEffect(() => {
       if (ref) {
         (ref as React.MutableRefObject<WebcamCirclesRef>).current = {
@@ -166,6 +162,9 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
         }
+        if (recordingIntervalRef.current) {
+          clearInterval(recordingIntervalRef.current);
+        }
       };
     }, [isVideoReady, processFrame]);
 
@@ -176,7 +175,7 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
     return (
       <div className="relative w-full h-full">
         <Webcam
-          key={key} // Add key to force remount
+          key={key}
           ref={webcamRef}
           audio={false}
           className="absolute inset-0 w-full h-full object-cover"
@@ -189,14 +188,19 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
           }}
           videoConstraints={{
             facingMode,
-            width: { ideal: 1280 }, // Reduced from 1920
-            height: { ideal: 720 }, // Reduced from 1080
+            width: { ideal: 640 },
+            height: { ideal: 480 },
           }}
         />
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full object-cover"
         />
+        {isRecording && (
+          <div className="absolute top-4 right-4 bg-red-500 px-2 py-1 rounded text-white">
+            Recording...
+          </div>
+        )}
       </div>
     );
   }
