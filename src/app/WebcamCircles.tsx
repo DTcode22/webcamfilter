@@ -18,15 +18,16 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
   ({ circleSize, spacing }, ref) => {
     const webcamRef = useRef<Webcam>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const [isVideoReady, setIsVideoReady] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
-    const [frames, setFrames] = useState<string[]>([]);
+    const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>(
       'user'
     );
     const animationFrameRef = useRef<number | null>(null);
-    const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const [key, setKey] = useState(0);
+    const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
     const processImageData = useCallback(
       (imageData: ImageData, ctx: CanvasRenderingContext2D) => {
@@ -77,64 +78,52 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
       animationFrameRef.current = requestAnimationFrame(processFrame);
     }, [captureAndProcess]);
 
-    const captureFrame = useCallback(() => {
+    const handleStartRecording = useCallback(() => {
+      setDownloadUrl(null);
       const canvas = canvasRef.current;
       if (canvas) {
         try {
-          // Reduce the size of the frame for better performance
-          const tempCanvas = document.createElement('canvas');
-          const tempCtx = tempCanvas.getContext('2d');
-          if (tempCtx) {
-            tempCanvas.width = canvas.width / 2;
-            tempCanvas.height = canvas.height / 2;
-            tempCtx.drawImage(
-              canvas,
-              0,
-              0,
-              tempCanvas.width,
-              tempCanvas.height
-            );
-            const frame = tempCanvas.toDataURL('image/jpeg', 0.5);
-            setFrames((prev) => [...prev, frame]);
-          }
+          const stream = canvas.captureStream(10); // Lower framerate
+          const recorder = new MediaRecorder(stream, {
+            mimeType: 'video/webm;codecs=h264',
+            videoBitsPerSecond: 500000, // 500 Kbps
+          });
+
+          recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              setRecordedChunks((prev) => [...prev, event.data]);
+            }
+          };
+
+          recorder.start(1000); // Collect in 1-second chunks
+          mediaRecorderRef.current = recorder;
+          setIsRecording(true);
+          setRecordedChunks([]);
         } catch (error) {
-          console.error('Error capturing frame:', error);
+          console.error('Error starting recording:', error);
+          alert('Could not start recording. Please try again.');
         }
       }
     }, []);
 
-    const handleStartRecording = useCallback(() => {
-      setFrames([]);
-      setIsRecording(true);
-      // Capture a frame every 200ms (5 fps)
-      recordingIntervalRef.current = setInterval(captureFrame, 200);
-    }, [captureFrame]);
-
     const handleStopRecording = useCallback(() => {
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current);
-      }
-      setIsRecording(false);
+      if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.stop();
+        setIsRecording(false);
 
-      // Create video from frames
-      if (frames.length > 0) {
-        try {
-          const element = document.createElement('a');
-          const text = frames.join('\n');
-          const blob = new Blob([text], { type: 'text/plain' });
-          element.href = URL.createObjectURL(blob);
-          element.download = 'webcam-frames.txt';
-          document.body.appendChild(element);
-          element.click();
-          document.body.removeChild(element);
-          URL.revokeObjectURL(element.href);
-          setFrames([]);
-        } catch (error) {
-          console.error('Error saving frames:', error);
-          alert('Failed to save recording. Please try again.');
-        }
+        // Create download URL after recording is complete
+        mediaRecorderRef.current.onstop = () => {
+          try {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            setDownloadUrl(url);
+          } catch (error) {
+            console.error('Error creating video:', error);
+            alert('Error creating video. Please try again.');
+          }
+        };
       }
-    }, [frames]);
+    }, [isRecording, recordedChunks]);
 
     const toggleCamera = useCallback(() => {
       setFacingMode((prev) => {
@@ -143,6 +132,15 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
         return newMode;
       });
     }, []);
+
+    // Cleanup download URL when component unmounts
+    useEffect(() => {
+      return () => {
+        if (downloadUrl) {
+          URL.revokeObjectURL(downloadUrl);
+        }
+      };
+    }, [downloadUrl]);
 
     useEffect(() => {
       if (ref) {
@@ -161,9 +159,6 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
       return () => {
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
-        }
-        if (recordingIntervalRef.current) {
-          clearInterval(recordingIntervalRef.current);
         }
       };
     }, [isVideoReady, processFrame]);
@@ -199,6 +194,17 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
         {isRecording && (
           <div className="absolute top-4 right-4 bg-red-500 px-2 py-1 rounded text-white">
             Recording...
+          </div>
+        )}
+        {downloadUrl && (
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 px-4 py-2 rounded text-white">
+            <a
+              href={downloadUrl}
+              download="webcam-recording.webm"
+              className="text-blue-400 hover:text-blue-300"
+            >
+              Download Recording
+            </a>
           </div>
         )}
       </div>
