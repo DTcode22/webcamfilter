@@ -202,7 +202,7 @@ const WebcamCircles = React.forwardRef<WebcamCirclesRef, WebcamCirclesProps>(
             <a
               href={downloadUrl}
               download="webcam-recording.webm"
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors"
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors mt-16"
             >
               Download Video
             </a>
